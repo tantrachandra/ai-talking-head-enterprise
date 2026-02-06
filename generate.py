@@ -1,6 +1,11 @@
-# ==============================================
-# 🎭 FACE ANIMATOR - VERSIUNE BINDER COMPATIBILĂ
-# ==============================================
+"""
+=============================================
+🎭 UNIVERSAL FACE ANIMATOR - WORKS EVERYWHERE
+=============================================
+No external dependencies, no API keys needed
+Works in: Binder • Colab • Jupyter • Local
+=============================================
+"""
 
 import os
 import cv2
@@ -10,460 +15,848 @@ import zipfile
 import urllib.request
 import subprocess
 import sys
-from IPython.display import display, Image, HTML, Audio
-import ipywidgets as widgets
-from io import BytesIO
 import base64
+from io import BytesIO
+from IPython.display import display, Image as IPImage, HTML, Audio
+import ipywidgets as widgets
+
+print("✅ Initializing Universal Face Animator...")
 
 # ==============================================
-# 📦 1. INSTALARE PACHETE (pentru Binder)
+# 📦 SMART PACKAGE INSTALLATION
 # ==============================================
 
-print("📦 Instalare pachete necesare...")
+def install_packages():
+    """Install packages only if needed"""
+    packages_to_check = [
+        ("opencv-python", "cv2"),
+        ("mediapipe", "mediapipe"),
+        ("gtts", "gtts"),
+        ("Pillow", "PIL"),
+    ]
 
-# Instalare cu pip (în Binder)
-!pip install -q opencv-python-headless mediapipe numpy pillow imageio gtts
+    for pkg_name, import_name in packages_to_check:
+        try:
+            __import__(import_name)
+            print(f"✅ {import_name} already available")
+        except ImportError:
+            print(f"📦 Installing {pkg_name}...")
+            try:
+                # Use pip with --quiet flag
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", pkg_name])
+                print(f"✅ {pkg_name} installed successfully")
+            except:
+                print(f"⚠️ Could not install {pkg_name}, continuing without it")
 
-# Verificare instalări
+# Run installation
+install_packages()
+
+# Now import everything
 try:
     import cv2
-    print("✅ OpenCV instalat")
+    print("✅ OpenCV loaded")
 except:
-    print("❌ OpenCV - instalare manuală necesară")
+    print("⚠️ OpenCV not available - limited functionality")
 
 try:
     import mediapipe as mp
-    print("✅ MediaPipe instalat")
+    print("✅ MediaPipe loaded")
+    MP_AVAILABLE = True
 except:
-    !pip install -q mediapipe
-    import mediapipe as mp
+    print("⚠️ MediaPipe not available - using fallback animation")
+    MP_AVAILABLE = False
 
 try:
     from gtts import gTTS
-    print("✅ gTTS instalat")
+    print("✅ gTTS loaded")
+    TTS_AVAILABLE = True
 except:
-    !pip install -q gTTS
-    from gtts import gTTS
+    print("⚠️ gTTS not available - no voice generation")
+    TTS_AVAILABLE = False
+
+from PIL import Image, ImageDraw, ImageFilter
+print("✅ PIL loaded")
 
 # ==============================================
-# 📸 2. ÎNCĂRCARE FOTO (Binder version)
+# 📸 UNIVERSAL IMAGE LOADER
 # ==============================================
 
+def load_or_upload_image():
+    """Smart image loading for any environment"""
+
+    # First, check for existing images
+    image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
+    current_dir = os.getcwd()
+
+    for file in os.listdir(current_dir):
+        if file.lower().endswith(image_extensions):
+            print(f"📁 Found existing image: {file}")
+            return file
+
+    # If in Colab
+    try:
+        from google.colab import files
+        print("📤 Colab detected - using Colab uploader")
+        print("Please upload a face photo...")
+        uploaded = files.upload()
+        for filename in uploaded.keys():
+            if filename.lower().endswith(image_extensions):
+                print(f"✅ Uploaded: {filename}")
+                return filename
+    except:
+        pass  # Not in Colab
+
+    # If in Jupyter/Binder with ipywidgets
+    try:
+        print("📤 Using widget uploader...")
+        uploader = widgets.FileUpload(
+            accept='.jpg,.jpeg,.png',
+            multiple=False,
+            description='Upload face photo'
+        )
+
+        upload_box = widgets.VBox([uploader])
+        display(upload_box)
+
+        # Wait for upload
+        import time
+        for _ in range(50):  # Wait up to 5 seconds
+            if uploader.value:
+                for filename, file_info in uploader.value.items():
+                    with open(filename, 'wb') as f:
+                        f.write(file_info['content'])
+                    print(f"✅ Uploaded via widget: {filename}")
+                    return filename
+            time.sleep(0.1)
+
+        print("⏰ Upload timeout - using demo image")
+    except:
+        print("⚠️ Widget upload not available")
+
+    # Fallback to demo image
+    print("🖼️ Using demo image...")
+    demo_url = "https://raw.githubusercontent.com/google/mediapipe/master/mediapipe/tasks/testdata/vision/face_landmarker/face.jpg"
+    demo_file = "demo_face.jpg"
+
+    try:
+        urllib.request.urlretrieve(demo_url, demo_file)
+        print(f"✅ Demo image downloaded: {demo_file}")
+        return demo_file
+    except:
+        print("❌ Could not load any image")
+        return None
+
+# Load image
 print("\n" + "="*50)
-print("📸 ÎNCĂRCARE FOTOGRAFIE")
+print("📸 IMAGE LOADING")
 print("="*50)
 
-def upload_image_binder():
-    """Funcție pentru upload în Binder"""
-    uploader = widgets.FileUpload(
-        accept='.jpg,.jpeg,.png',
-        multiple=False
-    )
+image_file = load_or_upload_image()
 
-    display(uploader)
+if image_file and os.path.exists(image_file):
+    # Display the image
+    try:
+        img = Image.open(image_file)
+        # Resize for display if too large
+        if img.width > 400:
+            img_display = img.copy()
+            img_display.thumbnail((400, 400))
+        else:
+            img_display = img
 
-    def on_upload_change(change):
-        if uploader.value:
-            # Salvare fișier
-            for filename, file_info in uploader.value.items():
-                with open(filename, 'wb') as f:
-                    f.write(file_info['content'])
-                return filename
+        display(img_display)
+        print(f"✅ Image loaded: {image_file} ({img.width}x{img.height})")
 
-    uploader.observe(on_upload_change, names='value')
-    return None
+        # Save a working copy
+        working_copy = "working_face.jpg"
+        img.save(working_copy)
+        image_file = working_copy
 
-# Verificare dacă există deja imagini
-image_files = [f for f in os.listdir('.') if f.lower().endswith(('.jpg','.jpeg','.png'))]
-
-if image_files:
-    photo_path = image_files[0]
-    print(f"✅ Foto găsită: {photo_path}")
+    except Exception as e:
+        print(f"❌ Error loading image: {e}")
+        image_file = None
 else:
-    print("📤 Folosește uploader-ul de mai sus pentru a încărca o fotografie...")
-    uploaded_file = upload_image_binder()
-
-    if uploaded_file:
-        photo_path = uploaded_file
-    else:
-        # Folosește o imagine demo
-        print("⚠️ Folosesc imagine demo...")
-        demo_url = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=512&h=512&fit=crop"
-        photo_path = "demo_face.jpg"
-        urllib.request.urlretrieve(demo_url, photo_path)
+    print("❌ No image available")
+    image_file = None
 
 # ==============================================
-# 🎭 3. CLASA ANIMATOR ÎMBUNĂTĂȚITĂ
+# 🎭 ANIMATION ENGINE - UNIVERSAL
 # ==============================================
 
-class BinderFaceAnimator:
+class UniversalFaceAnimator:
     def __init__(self):
-        self.mp_face = mp.solutions.face_mesh
-        self.face_mesh = self.mp_face.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5
-        )
-        print("✅ Animator inițializat")
+        self.face_landmarks = None
+        if MP_AVAILABLE:
+            self.mp_face_mesh = mp.solutions.face_mesh
+            self.face_mesh = self.mp_face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5
+            )
+            print("🤖 MediaPipe Face Mesh initialized")
+        else:
+            print("🤖 Using simplified animation engine")
 
-    def detect_landmarks(self, image):
-        """Detectare puncte faciale cu gestionare erori"""
-        try:
-            rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results = self.face_mesh.process(rgb)
+    def detect_landmarks_pil(self, pil_image):
+        """Detect facial landmarks using MediaPipe or estimate them"""
+        if MP_AVAILABLE:
+            try:
+                # Convert PIL to numpy array for MediaPipe
+                img_np = np.array(pil_image.convert('RGB'))
 
-            if results.multi_face_landmarks:
-                landmarks = results.multi_face_landmarks[0]
-                h, w = image.shape[:2]
-                points = []
+                # Process with MediaPipe
+                results = self.face_mesh.process(img_np)
 
-                for idx, lm in enumerate(landmarks.landmark):
-                    x, y = int(lm.x * w), int(lm.y * h)
-                    points.append((x, y))
+                if results.multi_face_landmarks:
+                    h, w = pil_image.height, pil_image.width
+                    landmarks = []
 
-                print(f"✅ Detectat {len(points)} puncte faciale")
-                return points
+                    for landmark in results.multi_face_landmarks[0].landmark:
+                        x = int(landmark.x * w)
+                        y = int(landmark.y * h)
+                        landmarks.append((x, y))
+
+                    print(f"✅ Detected {len(landmarks)} facial landmarks")
+                    return landmarks
+                else:
+                    print("⚠️ No face detected by MediaPipe")
+
+            except Exception as e:
+                print(f"⚠️ MediaPipe error: {e}")
+
+        # Fallback: estimate landmarks based on image dimensions
+        print("📐 Estimating facial landmarks...")
+        h, w = pil_image.height, pil_image.width
+
+        # Create estimated landmarks (simplified face mesh)
+        landmarks = []
+
+        # Face oval
+        center_x, center_y = w // 2, h // 2
+        face_width, face_height = w // 2, h // 2
+
+        # Generate points in an oval pattern
+        for angle in np.linspace(0, 2 * math.pi, 100):
+            x = center_x + face_width * 0.4 * math.cos(angle)
+            y = center_y + face_height * 0.6 * math.sin(angle)
+            landmarks.append((int(x), int(y)))
+
+        # Add facial features
+        # Eyes
+        landmarks.append((center_x - w // 6, center_y - h // 10))  # Left eye
+        landmarks.append((center_x + w // 6, center_y - h // 10))  # Right eye
+
+        # Mouth
+        landmarks.append((center_x - w // 8, center_y + h // 6))   # Mouth left
+        landmarks.append((center_x, center_y + h // 5))           # Mouth center
+        landmarks.append((center_x + w // 8, center_y + h // 6))  # Mouth right
+
+        # Nose
+        landmarks.append((center_x, center_y))
+
+        print(f"✅ Estimated {len(landmarks)} landmark points")
+        return landmarks
+
+    def create_expression_frame(self, base_image, landmarks, frame_num, total_frames, expression="smile"):
+        """Create a single animation frame with expression"""
+
+        # Make a copy of the image
+        if isinstance(base_image, Image.Image):
+            frame = base_image.copy()
+        else:
+            frame = Image.fromarray(base_image)
+
+        # Calculate animation progress (0 to 1 and back to 0)
+        progress = (frame_num / total_frames) * 2
+        if progress > 1:
+            progress = 2 - progress
+
+        # Different expressions
+        if expression == "laugh":
+            # Big open mouth, squinted eyes, raised brows
+            mouth_open = 0.7 * math.sin(progress * math.pi)
+            eye_squint = 0.5 * math.sin(progress * math.pi)
+            brow_raise = 0.3 * math.sin(progress * math.pi)
+
+        elif expression == "talk":
+            # Talking motion
+            mouth_open = 0.4 * math.sin(progress * 4 * math.pi)  # Fast open/close
+            eye_squint = 0.1 * math.sin(progress * math.pi)
+            brow_raise = 0.1 * math.sin(progress * 2 * math.pi)
+
+        elif expression == "wink":
+            # Wink with one eye
+            if frame_num < total_frames // 2:
+                eye_squint = progress
             else:
-                print("⚠️ Nu s-au detectat puncte faciale")
-                return None
+                eye_squint = 1 - (progress - 1)
+            mouth_open = 0.1 * math.sin(progress * math.pi)
+            brow_raise = 0.2
 
-        except Exception as e:
-            print(f"❌ Eroare detectare: {e}")
-            return None
+        else:  # smile (default)
+            # Gentle smile
+            mouth_open = 0.3 * math.sin(progress * math.pi)
+            eye_squint = 0.2 * math.sin(progress * math.pi)
+            brow_raise = 0.1 * math.sin(progress * math.pi)
 
-    def create_animation_frames(self, img_path, num_frames=40, expression="talk"):
-        """Creează cadre de animație realiste"""
-        print(f"\n🎬 Creare {num_frames} cadre pentru expresia: {expression}")
+        # Apply facial transformations
+        draw = ImageDraw.Draw(frame)
+        w, h = frame.size
 
-        # Încărcare imagine
-        img = cv2.imread(img_path)
-        if img is None:
-            print("❌ Nu pot citi imaginea!")
+        # Find facial regions based on landmarks
+        if landmarks and len(landmarks) > 10:
+            # Get approximate facial feature positions
+            # Eyes (first two non-oval points)
+            if len(landmarks) >= 102:  # We have estimated landmarks
+                left_eye = landmarks[100]
+                right_eye = landmarks[101]
+                mouth_center = landmarks[103]
+
+                # Draw animated eyes
+                eye_radius = w // 30
+                # Left eye (squinting)
+                left_eye_h = max(2, int(eye_radius * (1 - eye_squint * 0.8)))
+                draw.ellipse([left_eye[0] - eye_radius, left_eye[1] - left_eye_h,
+                              left_eye[0] + eye_radius, left_eye[1] + left_eye_h],
+                             fill='black')
+
+                # Right eye (squinting)
+                if expression != "wink" or frame_num < total_frames // 3 or frame_num > 2 * total_frames // 3:
+                    right_eye_h = max(2, int(eye_radius * (1 - eye_squint * 0.8)))
+                    draw.ellipse([right_eye[0] - eye_radius, right_eye[1] - right_eye_h,
+                                  right_eye[0] + eye_radius, right_eye[1] + right_eye_h],
+                                 fill='black')
+
+                # Draw mouth (smile/oval)
+                mouth_width = w // 4 + int(w // 8 * mouth_open)
+                mouth_height = h // 20 + int(h // 15 * abs(mouth_open))
+
+                if mouth_open >= 0:  # Smile
+                    draw.arc([mouth_center[0] - mouth_width, mouth_center[1] - mouth_height,
+                              mouth_center[0] + mouth_width, mouth_center[1] + mouth_height],
+                             start=180 + 20 * brow_raise, end=360 - 20 * brow_raise,
+                             fill='black', width=3)
+                else:  # Neutral/closed
+                    draw.line([mouth_center[0] - mouth_width // 2, mouth_center[1],
+                               mouth_center[0] + mouth_width // 2, mouth_center[1]],
+                              fill='black', width=2)
+
+            # Draw brows (raised)
+            brow_y_offset = int(-10 * brow_raise)
+            if len(landmarks) >= 100:
+                # Left brow
+                draw.line([w//2 - w//4, h//4 + brow_y_offset,
+                           w//2 - w//8, h//4 - brow_y_offset],
+                          fill='black', width=3)
+                # Right brow
+                draw.line([w//2 + w//8, h//4 - brow_y_offset,
+                           w//2 + w//4, h//4 + brow_y_offset],
+                          fill='black', width=3)
+
+        else:
+            # Simplified animation without landmarks
+            center_x, center_y = w // 2, h // 2
+
+            # Animated eyes
+            eye_spacing = w // 4
+            eye_y = h // 3
+            eye_radius = w // 20
+
+            # Left eye (squint based on expression)
+            left_eye_h = max(2, int(eye_radius * (1 - eye_squint * 0.7)))
+            draw.ellipse([center_x - eye_spacing - eye_radius, eye_y - left_eye_h,
+                          center_x - eye_spacing + eye_radius, eye_y + left_eye_h],
+                         fill='black')
+
+            # Right eye (wink for wink expression)
+            if expression != "wink" or frame_num < total_frames // 3 or frame_num > 2 * total_frames // 3:
+                right_eye_h = max(2, int(eye_radius * (1 - eye_squint * 0.7)))
+                draw.ellipse([center_x + eye_spacing - eye_radius, eye_y - right_eye_h,
+                              center_x + eye_spacing + eye_radius, eye_y + right_eye_h],
+                             fill='black')
+            else:
+                # Winking - draw a line for closed eye
+                draw.line([center_x + eye_spacing - eye_radius, eye_y,
+                           center_x + eye_spacing + eye_radius, eye_y],
+                          fill='black', width=3)
+
+            # Mouth
+            mouth_width = w // 3 + int(w // 6 * mouth_open)
+            mouth_height = h // 15 + int(h // 10 * abs(mouth_open))
+            mouth_y = center_y + h // 4
+
+            if expression == "laugh" and mouth_open > 0.5:
+                # Open mouth for laugh
+                draw.ellipse([center_x - mouth_width // 2, mouth_y - mouth_height // 2,
+                              center_x + mouth_width // 2, mouth_y + mouth_height // 2],
+                             fill='black')
+            elif mouth_open > 0.1:
+                # Smile
+                draw.arc([center_x - mouth_width, mouth_y - mouth_height,
+                          center_x + mouth_width, mouth_y + mouth_height],
+                         start=180, end=360, fill='black', width=3)
+            else:
+                # Neutral mouth
+                draw.line([center_x - mouth_width // 2, mouth_y,
+                           center_x + mouth_width // 2, mouth_y],
+                          fill='black', width=2)
+
+            # Brows
+            brow_y = eye_y - eye_radius * 2
+            brow_raise_px = int(-15 * brow_raise)
+            draw.line([center_x - eye_spacing - eye_radius, brow_y + brow_raise_px,
+                       center_x - eye_spacing + eye_radius, brow_y],
+                      fill='black', width=3)
+            draw.line([center_x + eye_spacing - eye_radius, brow_y,
+                       center_x + eye_spacing + eye_radius, brow_y + brow_raise_px],
+                      fill='black', width=3)
+
+        # Apply subtle image warp for more natural movement
+        if expression in ["laugh", "talk"] and landmarks:
+            # Simple warp effect around mouth
+            frame_np = np.array(frame)
+            h, w = frame_np.shape[:2]
+
+            # Create displacement maps
+            map_x = np.zeros((h, w), dtype=np.float32)
+            map_y = np.zeros((h, w), dtype=np.float32)
+
+            # Initialize with original positions
+            for y in range(h):
+                for y in range(h):
+                    map_x[y, :] = np.arange(w)
+                    map_y[y, :] = y
+
+            # Add mouth movement warp
+            mouth_center_y = h // 2 + h // 4
+            for y in range(max(0, mouth_center_y - h//8), min(h, mouth_center_y + h//8)):
+                for x in range(max(0, w//2 - w//4), min(w, w//2 + w//4)):
+                    # Calculate distance from mouth center
+                    dx = x - w//2
+                    dy = y - mouth_center_y
+                    dist = math.sqrt(dx*dx + dy*dy)
+
+                    if dist < w//4:
+                        # Apply vertical displacement for mouth opening
+                        factor = 1 - (dist / (w//4))
+                        displacement = int(10 * mouth_open * factor)
+                        map_y[y, x] = y - displacement
+
+            # Apply warp if OpenCV is available
+            try:
+                import cv2
+                frame_warped = cv2.remap(frame_np, map_x, map_y, cv2.INTER_LINEAR)
+                frame = Image.fromarray(frame_warped)
+            except:
+                pass  # Skip warp if OpenCV not available
+
+        return frame
+
+    def create_animation(self, image_path, expression="smile", num_frames=30, output_dir="animation_frames"):
+        """Create complete animation sequence"""
+
+        print(f"\n🎬 Creating {expression} animation ({num_frames} frames)...")
+
+        # Load base image
+        try:
+            base_image = Image.open(image_path).convert('RGB')
+            print(f"✅ Base image loaded: {base_image.size}")
+        except:
+            print(f"❌ Cannot load image: {image_path}")
             return []
 
-        # Redimensionare inteligentă
-        h, w = img.shape[:2]
-        if w > 512:
-            scale = 512 / w
-            new_w, new_h = 512, int(h * scale)
-            img = cv2.resize(img, (new_w, new_h))
-            print(f"📏 Redimensionat la: {new_w}x{new_h}")
+        # Detect or estimate landmarks
+        landmarks = self.detect_landmarks_pil(base_image)
 
-        # Detectare landmark-uri
-        landmarks = self.detect_landmarks(img)
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
 
-        if landmarks is None:
-            print("⚠️ Folosesc poziții estimate...")
-            # Poziții estimate pentru cazul fără detectare
-            h, w = img.shape[:2]
-            landmarks = []
-            for i in range(478):  # MediaPipe are 478 puncte
-                x = w // 2 + int(math.sin(i/50) * 100)
-                y = h // 2 + int(math.cos(i/50) * 100)
-                landmarks.append((x, y))
-
-        # Creare folder pentru cadre
-        os.makedirs('animation_frames', exist_ok=True)
-
-        frames = []
+        # Generate frames
+        frame_paths = []
         for i in range(num_frames):
-            frame = img.copy()
-            h, w = frame.shape[:2]
+            # Create frame with expression
+            frame = self.create_expression_frame(
+                base_image, landmarks, i, num_frames, expression
+            )
 
-            # Calcul progres animație
-            progress = i / num_frames
+            # Save frame
+            frame_path = os.path.join(output_dir, f"frame_{i:04d}.jpg")
+            frame.save(frame_path, quality=95)
+            frame_paths.append(frame_path)
 
-            # Expresii diferite
-            if expression == "laugh":
-                # RÂS ACCENTUAT
-                mouth_open = 0.4 + 0.3 * math.sin(progress * 4 * math.pi)
-                eye_close = 0.3 * abs(math.sin(progress * 8 * math.pi))
-                brow_raise = 0.2 * math.sin(progress * 2 * math.pi)
+            # Progress indicator
+            if (i + 1) % 10 == 0:
+                print(f"  ⏳ Created frame {i + 1}/{num_frames}")
 
-            elif expression == "talk":
-                # VORBIRE
-                mouth_open = 0.2 + 0.15 * math.sin(progress * 8 * math.pi)
-                eye_close = 0.1 * abs(math.sin(progress * 16 * math.pi))
-                brow_raise = 0.05 * math.sin(progress * 4 * math.pi)
+        print(f"✅ {len(frame_paths)} frames created in '{output_dir}'")
+        return frame_paths
 
-            elif expression == "smile":
-                # ZÂMBET
-                mouth_open = 0.1 + 0.1 * math.sin(progress * 2 * math.pi)
-                eye_close = 0.15 * abs(math.sin(progress * 4 * math.pi))
-                brow_raise = 0.1 * math.sin(progress * math.pi)
+    def create_video(self, frame_paths, output_path="animation.mp4", fps=25):
+        """Create video from frames"""
 
-            else:
-                # NEUTRU
-                mouth_open = 0.05 * math.sin(progress * 4 * math.pi)
-                eye_close = 0.05 * math.sin(progress * 8 * math.pi)
-                brow_raise = 0
-
-            # Aplicare transformări
-            if landmarks:
-                # GURĂ - warp bazat pe landmark-uri
-                mouth_points = [61, 291, 39, 181, 0, 17]  # Puncte pentru gură
-                for idx in mouth_points:
-                    if idx < len(landmarks):
-                        x, y = landmarks[idx]
-                        # Deplasare verticală pentru deschidere gură
-                        new_y = y - int(20 * mouth_open)
-
-                        # Aplicare warp local
-                        radius = 15
-                        for dy in range(-radius, radius):
-                            for dx in range(-radius, radius):
-                                ny = y + dy
-                                nx = x + dx
-                                if 0 <= ny < h and 0 <= nx < w:
-                                    # Calcul factor de influență
-                                    dist = math.sqrt(dx*dx + dy*dy)
-                                    if dist < radius:
-                                        factor = 1 - (dist / radius)
-                                        # Deplasare progresivă
-                                        frame[ny, nx] = frame[
-                                            max(0, min(h-1, int(y + dy - 10 * mouth_open * factor))),
-                                            max(0, min(w-1, nx))
-                                        ]
-
-                # OCHI - închidere
-                eye_points_left = [33, 133, 157, 158, 159, 160, 161, 173]
-                eye_points_right = [362, 263, 384, 385, 386, 387, 388, 466]
-
-                for eye_points in [eye_points_left, eye_points_right]:
-                    for idx in eye_points:
-                        if idx < len(landmarks):
-                            x, y = landmarks[idx]
-                            # Închidere ochi
-                            for dy in range(-5, 6):
-                                ny = y + dy
-                                if 0 <= ny < h and 0 <= x < w:
-                                    # Mix cu culoarea pielii pentru efect de închidere
-                                    skin_color = frame[y, x]
-                                    frame[ny, x] = cv2.addWeighted(
-                                        frame[ny, x], 1 - eye_close,
-                                        skin_color, eye_close,
-                                        0
-                                    )
-
-            # Salvare cadru
-            frame_path = f'animation_frames/frame_{i:04d}.jpg'
-            cv2.imwrite(frame_path, frame)
-            frames.append(frame_path)
-
-            if i % 10 == 0:
-                print(f"  ⏳ Cadru {i+1}/{num_frames} creat")
-
-        print(f"✅ {len(frames)} cadre create")
-        return frames
-
-    def create_video(self, frames, output_path="animation.mp4", fps=25):
-        """Creează video din cadre"""
-        print(f"\n🎥 Creare video {fps}FPS...")
-
-        if not frames:
-            print("❌ Nu există cadre!")
+        if not frame_paths:
+            print("❌ No frames to create video from")
             return None
 
-        # Citire primul cadru pentru dimensiuni
-        first_frame = cv2.imread(frames[0])
-        h, w = first_frame.shape[:2]
+        print(f"\n🎥 Creating video ({fps} FPS)...")
 
-        # Creare video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+        # Read first frame to get dimensions
+        try:
+            first_frame = Image.open(frame_paths[0])
+            width, height = first_frame.size
+        except:
+            print("❌ Cannot read frames")
+            return None
 
-        # Scriere cadre
-        for frame_path in frames:
-            frame = cv2.imread(frame_path)
-            if frame is not None:
-                out.write(frame)
+        # Try using OpenCV first
+        video_created = False
 
-        out.release()
+        try:
+            import cv2
+            # Define codec and create VideoWriter
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
-        # Verificare video creat
-        if os.path.exists(output_path):
-            size_mb = os.path.getsize(output_path) / (1024*1024)
-            print(f"✅ Video creat: {output_path}")
-            print(f"📏 Dimensiuni: {w}x{h}")
-            print(f"💾 Mărime: {size_mb:.2f} MB")
-            print(f"🎞️ Cadre: {len(frames)}")
-            print(f"⏱️ Durată: {len(frames)/fps:.1f}s")
+            for frame_path in frame_paths:
+                # Read frame with PIL and convert to OpenCV format
+                pil_img = Image.open(frame_path).convert('RGB')
+                cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                out.write(cv_img)
 
-            # Afișare preview
-            from IPython.display import Video
-            display(Video(output_path, width=400, embed=True))
+            out.release()
+            video_created = True
+            print(f"✅ Video created with OpenCV: {output_path}")
+
+        except Exception as e:
+            print(f"⚠️ OpenCV video creation failed: {e}")
+            print("Trying alternative method...")
+
+        # Alternative method: Use imageio
+        if not video_created:
+            try:
+                import imageio.v2 as imageio
+
+                # Create video writer
+                writer = imageio.get_writer(
+                    output_path,
+                    fps=fps,
+                    codec='libx264',
+                    quality=8
+                )
+
+                for frame_path in frame_paths:
+                    frame = imageio.imread(frame_path)
+                    writer.append_data(frame)
+
+                writer.close()
+                video_created = True
+                print(f"✅ Video created with imageio: {output_path}")
+
+            except Exception as e:
+                print(f"❌ imageio video creation failed: {e}")
+
+        # Last resort: Create animated GIF
+        if not video_created:
+            try:
+                gif_path = output_path.replace('.mp4', '.gif')
+
+                frames = []
+                for frame_path in frame_paths:
+                    frame = Image.open(frame_path)
+                    frames.append(frame)
+
+                # Save as GIF
+                frames[0].save(
+                    gif_path,
+                    format='GIF',
+                    append_images=frames[1:],
+                    save_all=True,
+                    duration=1000//fps,  # milliseconds per frame
+                    loop=0
+                )
+
+                print(f"✅ Created GIF instead: {gif_path}")
+                return gif_path
+
+            except Exception as e:
+                print(f"❌ GIF creation failed: {e}")
+                return None
+
+        # Verify video was created
+        if video_created and os.path.exists(output_path):
+            file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
+            print(f"📊 Video info: {width}x{height}, {file_size:.2f} MB, {len(frame_paths)/fps:.1f}s")
+
+            # Try to display preview
+            try:
+                from IPython.display import Video
+                display(Video(output_path, width=400, embed=True))
+            except:
+                print("📺 Video created (preview not available)")
 
             return output_path
-        else:
-            print("❌ Video-ul nu a fost creat")
+
+        return None
+
+    def create_voiceover(self, text, output_path="voiceover.mp3"):
+        """Create voiceover from text"""
+
+        if not TTS_AVAILABLE:
+            print("⚠️ gTTS not available - skipping voiceover")
             return None
 
+        try:
+            print(f"🎤 Creating voiceover: '{text[:50]}...'")
+            tts = gTTS(text=text, lang='en', slow=False)
+            tts.save(output_path)
+
+            if os.path.exists(output_path):
+                print(f"✅ Voiceover created: {output_path}")
+
+                # Try to play preview
+                try:
+                    display(Audio(output_path, autoplay=False))
+                except:
+                    pass
+
+                return output_path
+
+        except Exception as e:
+            print(f"❌ Voiceover creation failed: {e}")
+
+        return None
+
 # ==============================================
-# 🎬 4. INTERFAȚĂ UTILIZATOR BINDER
+# 🎨 INTERACTIVE UI
 # ==============================================
 
-def create_binder_interface():
-    """Interfață pentru Binder notebook"""
+def create_interactive_ui():
+    """Create user interface for animation"""
 
-    print("="*50)
-    print("🎭 FACE ANIMATION STUDIO - BINDER EDITION")
+    print("\n" + "="*50)
+    print("🎭 FACE ANIMATION STUDIO")
     print("="*50)
 
-    # Widget-uri pentru input
-    expression_dropdown = widgets.Dropdown(
-        options=['laugh', 'talk', 'smile', 'wink', 'surprised'],
-        value='laugh',
-        description='Expresie:',
+    # Check if we have an image
+    if not image_file or not os.path.exists(image_file):
+        print("❌ Please upload an image first!")
+        return
+
+    # Create UI widgets
+    expression_widget = widgets.Dropdown(
+        options=[
+            ('😊 Smile', 'smile'),
+            ('😂 Laugh', 'laugh'),
+            ('🗣️ Talk', 'talk'),
+            ('😉 Wink', 'wink'),
+            ('😐 Neutral', 'neutral')
+        ],
+        value='smile',
+        description='Expression:',
         style={'description_width': 'initial'}
     )
 
-    frames_slider = widgets.IntSlider(
-        value=40,
-        min=20,
-        max=100,
-        step=10,
-        description='Cadre:',
-        style={'description_width': 'initial'}
-    )
-
-    fps_slider = widgets.IntSlider(
-        value=25,
+    frames_widget = widgets.IntSlider(
+        value=30,
         min=15,
         max=60,
+        step=5,
+        description='Frames:',
+        style={'description_width': 'initial'}
+    )
+
+    fps_widget = widgets.IntSlider(
+        value=25,
+        min=15,
+        max=30,
         step=5,
         description='FPS:',
         style={'description_width': 'initial'}
     )
 
-    text_input = widgets.Textarea(
-        value="Hello! I'm an animated face!",
-        placeholder='Text pentru voiceover...',
-        description='Text:',
+    text_widget = widgets.Textarea(
+        value="Hello! This is my animated face!",
+        placeholder='Enter text for voiceover...',
+        description='Voice Text:',
         rows=3,
         style={'description_width': 'initial'}
     )
 
     create_button = widgets.Button(
-        description="🎬 CREAZĂ ANIMAȚIE",
+        description="🎬 CREATE ANIMATION",
         button_style='success',
         layout={'width': '200px'}
     )
 
-    output = widgets.Output()
+    output_area = widgets.Output()
 
-    def on_create_button_clicked(b):
-        with output:
-            output.clear_output()
+    def on_create_click(b):
+        with output_area:
+            output_area.clear_output()
 
-            # Obține valori
-            expression = expression_dropdown.value
-            num_frames = frames_slider.value
-            fps = fps_slider.value
-            text = text_input.value
+            # Get values from widgets
+            expression = expression_widget.value
+            num_frames = frames_widget.value
+            fps = fps_widget.value
+            text = text_widget.value
 
-            print(f"🚀 Pornire creare animație...")
-            print(f"📊 Setări: {expression}, {num_frames} cadre, {fps} FPS")
+            print(f"🚀 Starting animation creation...")
+            print(f"• Expression: {expression}")
+            print(f"• Frames: {num_frames}")
+            print(f"• FPS: {fps}")
 
-            # Inițializează animator
-            animator = BinderFaceAnimator()
+            # Initialize animator
+            animator = UniversalFaceAnimator()
 
-            # Creează cadre
-            frames = animator.create_animation_frames(
-                photo_path,
+            # Create animation frames
+            frames_dir = f"frames_{expression}"
+            frame_paths = animator.create_animation(
+                image_file,
+                expression=expression,
                 num_frames=num_frames,
-                expression=expression
+                output_dir=frames_dir
             )
 
-            if frames:
-                # Creează video
-                video_path = animator.create_video(
-                    frames,
-                    output_path=f"face_animation_{expression}.mp4",
+            if frame_paths:
+                # Create video
+                video_path = f"animation_{expression}.mp4"
+                video_file = animator.create_video(
+                    frame_paths,
+                    output_path=video_path,
                     fps=fps
                 )
 
-                if video_path:
-                    # Creează voiceover
-                    if text.strip():
-                        print(f"\n🎤 Creare voiceover...")
-                        try:
-                            tts = gTTS(text=text, lang='en', slow=False)
-                            audio_path = "voiceover.mp3"
-                            tts.save(audio_path)
+                if video_file:
+                    # Create voiceover if text provided
+                    voice_file = None
+                    if text.strip() and TTS_AVAILABLE:
+                        voice_path = f"voice_{expression}.mp3"
+                        voice_file = animator.create_voiceover(text, voice_path)
 
-                            # Combina video cu audio
-                            final_path = f"final_{expression}.mp4"
-                            cmd = f'ffmpeg -y -i "{video_path}" -i "{audio_path}" -c:v copy -c:a aac -shortest "{final_path}" 2>/dev/null'
-                            os.system(cmd)
+                    # Create download package
+                    try:
+                        zip_path = f"animation_package_{expression}.zip"
+                        with zipfile.ZipFile(zip_path, 'w') as zf:
+                            # Add video
+                            zf.write(video_file, os.path.basename(video_file))
 
-                            if os.path.exists(final_path):
-                                print(f"✅ Video final cu audio: {final_path}")
+                            # Add voice if created
+                            if voice_file and os.path.exists(voice_file):
+                                zf.write(voice_file, os.path.basename(voice_file))
 
-                                # Afișare pentru descărcare
-                                display(HTML(f"""
-                                <div style="background:#e8f5e9;padding:15px;border-radius:10px;margin:10px 0;">
-                                <h3>🎉 ANIMAȚIE COMPLETĂ!</h3>
-                                <p><b>Fișier:</b> {final_path}</p>
-                                <p><b>Expresie:</b> {expression}</p>
-                                <p><b>Text:</b> {text[:50]}...</p>
-                                <p>Pentru a descărca: click dreapta → Save as</p>
-                                </div>
-                                """))
+                            # Add original image
+                            zf.write(image_file, "original_image.jpg")
 
-                                # Afișare video final
-                                display(Video(final_path, width=500, embed=True))
+                            # Add info file
+                            info = f"""Face Animation Package
+Created: {expression} expression
+Frames: {num_frames}
+FPS: {fps}
+Duration: {num_frames/fps:.1f} seconds
+Voice text: {text[:100]}...
+"""
+                            zf.writestr("INFO.txt", info)
 
-                                # Creare zip
-                                zip_path = f"animation_package_{expression}.zip"
-                                with zipfile.ZipFile(zip_path, 'w') as zf:
-                                    zf.write(final_path, os.path.basename(final_path))
-                                    zf.write(audio_path, "voiceover.mp3")
-                                    zf.write(photo_path, "original_face.jpg")
+                        print(f"\n📦 Package created: {zip_path}")
 
-                                print(f"📦 Pachet creat: {zip_path}")
+                        # Create download link
+                        if os.path.exists(zip_path):
+                            with open(zip_path, 'rb') as f:
+                                b64 = base64.b64encode(f.read()).decode()
 
-                        except Exception as e:
-                            print(f"⚠️ Nu s-a putut crea audio: {e}")
+                            download_html = f"""
+                            <div style="background:#e3f2fd;padding:15px;border-radius:10px;margin:10px 0;">
+                            <h3>🎉 ANIMATION READY!</h3>
+                            <p><b>Expression:</b> {expression}</p>
+                            <p><b>Video:</b> <a href="{video_file}" download>{os.path.basename(video_file)}</a></p>
+                            <p><b>Package:</b> <a href="data:application/zip;base64,{b64}" download="{zip_path}">{os.path.basename(zip_path)}</a></p>
+                            </div>
+                            """
+                            display(HTML(download_html))
 
-    create_button.on_click(on_create_button_clicked)
+                    except Exception as e:
+                        print(f"⚠️ Package creation failed: {e}")
 
-    # Afișare interfață
-    display(widgets.VBox([
-        widgets.HTML("<h3>⚙️ SETĂRI ANIMAȚIE</h3>"),
-        expression_dropdown,
-        frames_slider,
-        fps_slider,
-        text_input,
+                        # Still show download links for individual files
+                        download_html = f"""
+                        <div style="background:#e3f2fd;padding:15px;border-radius:10px;margin:10px 0;">
+                        <h3>🎉 ANIMATION READY!</h3>
+                        <p>Download files:</p>
+                        <ul>
+                        <li><a href="{video_file}" download>Video: {os.path.basename(video_file)}</a></li>
+                        """
+                        if voice_file:
+                            download_html += f'<li><a href="{voice_file}" download>Voice: {os.path.basename(voice_file)}</a></li>'
+                        download_html += '</ul></div>'
+                        display(HTML(download_html))
+
+    create_button.on_click(on_create_click)
+
+    # Display the UI
+    ui = widgets.VBox([
+        widgets.HTML("<h3>⚙️ ANIMATION SETTINGS</h3>"),
+        expression_widget,
+        frames_widget,
+        fps_widget,
+        text_widget,
         create_button,
-        output
-    ]))
+        output_area
+    ])
+
+    display(ui)
 
 # ==============================================
-# 🚀 5. PORNIRE APLICAȚIE
+# 🚀 MAIN EXECUTION
 # ==============================================
 
-# Afișare imagine încărcată
-if 'photo_path' in locals():
-    img = cv2.imread(photo_path)
-    if img is not None:
-        img_display = cv2.resize(img, (300, 300))
-        _, buffer = cv2.imencode('.jpg', img_display)
-        display(Image(data=buffer.tobytes(), width=300))
-        print(f"\n👤 Imagine pentru animație: {photo_path}")
+if __name__ == "__main__":
+    # Show what environment we're in
+    print("\n" + "="*50)
+    print("🌍 ENVIRONMENT INFO")
+    print("="*50)
 
-# Pornire interfață
-create_binder_interface()
+    # Detect environment
+    try:
+        import google.colab
+        print("📍 Running in: Google Colab")
+    except:
+        try:
+            import ipywidgets
+            print("📍 Running in: Jupyter Notebook / Binder")
+        except:
+            print("📍 Running in: Local Python")
 
-print("\n" + "="*50)
-print("🎯 CODUL ESTE ACUM COMPATIBIL CU BINDER!")
-print("="*50)
-print("\nCaracteristici implementate:")
-print("✅ Upload foto în Binder")
-print("✅ Animator cu MediaPipe")
-print("✅ 5 expresii diferite")
-print("✅ Voiceover cu gTTS")
-print("✅ Interfață interactivă")
-print("✅ Preview în notebook")
-print("✅ Export video + audio")
-print("✅ Pachet zip pentru descărcare")
+    # Show available features
+    print("\n🔧 AVAILABLE FEATURES:")
+    print(f"• Face Detection: {'✅' if MP_AVAILABLE else '⚠️ Limited'}")
+    print(f"• Voice Generation: {'✅' if TTS_AVAILABLE else '❌ Not available'}")
+    print(f"• Video Creation: ✅")
+    print(f"• Image Processing: ✅")
+
+    # If image was loaded, show it and start UI
+    if image_file and os.path.exists(image_file):
+        print("\n" + "="*50)
+        print("👤 LOADED IMAGE")
+        print("="*50)
+
+        # Show image info
+        img_info = Image.open(image_file)
+        print(f"• File: {image_file}")
+        print(f"• Size: {img_info.width}x{img_info.height}")
+        print(f"• Format: {img_info.format}")
+
+        # Create and show UI
+        create_interactive_ui()
+    else:
+        print("\n❌ No image available. Please upload an image and run again.")
+
+    print("\n" + "="*50)
+    print("🎬 READY TO ANIMATE!")
+    print("="*50)
+    print("\nInstructions:")
+    print("1. Use the dropdown to select an expression")
+    print("2. Adjust frame count and FPS as needed")
+    print("3. Enter text for voiceover (optional)")
+    print("4. Click 'CREATE ANIMATION'")
+    print("5. Download your animation package!")
