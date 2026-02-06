@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+SadTalker/
+Wav2Lip/
+output/
+*.mp4
+*.wav

@@ -1,0 +1,16 @@
+torch>=2.1
+torchvision
+torchaudio
+numpy
+opencv-python
+scipy
+librosa
+soundfile
+tqdm
+pyyaml
+face-alignment
+imageio
+imageio-ffmpeg
+gfpgan
+Wav2Lip
+elevenlabslib
